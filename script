@@ -1,11 +1,6 @@
-# ==========================================
-# Автоматическое обновление ESET Mirror
-# Windows 10
-# ==========================================
-
 $ErrorActionPreference = "Stop"
 
-# Настройки
+# Configuration
 $Url = "https://nv-kompmaster.ru/soft/Miror/Miror.zip"
 
 $DownloadFolder = "$env:USERPROFILE\Downloads"
@@ -14,84 +9,111 @@ $Archive = Join-Path $DownloadFolder "Miror.zip"
 $UpdateFolder = "C:\updates"
 $TempFolder = "C:\ESET_Temp"
 
-# Лог
 $LogFolder = "C:\Scripts\Logs"
 $LogFile = Join-Path $LogFolder "ESET-update.log"
 
+# Create required directories
 New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null
+New-Item -ItemType Directory -Path $DownloadFolder -Force | Out-Null
 
-function Write-Log($Message) {
+# Logging function
+function Write-Log {
+    param([string]$Message)
+
     $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Add-Content -Path $LogFile -Value "[$Time] $Message"
+    $Entry = "[$Time] $Message"
+
+    Add-Content -Path $LogFile -Value $Entry
+    Write-Host $Entry
 }
 
 try {
-    Write-Log "================================"
-    Write-Log "Начало обновления ESET"
+    Write-Log "========================================"
+    Write-Log "Starting ESET Mirror update"
 
-    # 1. Скачиваем архив
-    Write-Log "Скачивание архива..."
+    # 1. Remove previously downloaded archives
+    Write-Log "Removing old archive files"
 
-    Invoke-WebRequest `
-        -Uri $Url `
-        -OutFile $Archive `
-        -UseBasicParsing
+    Get-ChildItem -Path $DownloadFolder -Filter "Miror*.zip" -File |
+        Remove-Item -Force
 
-    # 2. Проверяем наличие архива
+    # 2. Download the archive
+    Write-Log "Starting archive download"
+
+    & curl.exe -L `
+        --fail `
+        --show-error `
+        --connect-timeout 20 `
+        --max-time 600 `
+        --progress-bar `
+        -o $Archive `
+        $Url
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Download failed. CURL exit code: $LASTEXITCODE"
+    }
+
     if (!(Test-Path $Archive)) {
-        throw "Архив не найден после скачивания"
+        throw "Downloaded archive was not found"
     }
 
     if ((Get-Item $Archive).Length -lt 1024) {
-        throw "Размер архива подозрительно маленький"
+        throw "Downloaded archive is too small"
     }
 
-    Write-Log "Архив скачан"
+    Write-Log "Archive downloaded successfully"
 
-    # 3. Проверяем ZIP и распаковываем во временную папку
+    # 3. Prepare temporary directory
+    Write-Log "Preparing temporary directory"
+
     if (Test-Path $TempFolder) {
         Remove-Item $TempFolder -Recurse -Force
     }
 
-    New-Item -ItemType Directory -Path $TempFolder | Out-Null
+    New-Item -ItemType Directory -Path $TempFolder -Force | Out-Null
 
-    Write-Log "Распаковка архива..."
+    # 4. Extract archive
+    Write-Log "Extracting archive"
 
     Expand-Archive `
         -Path $Archive `
         -DestinationPath $TempFolder `
         -Force
 
-    # Проверяем, что распаковка не пустая
-    $Files = Get-ChildItem $TempFolder -Recurse -File
+    $Files = @(Get-ChildItem -Path $TempFolder -Recurse -File)
 
     if ($Files.Count -eq 0) {
-        throw "Архив распаковался, но файлов внутри нет"
+        throw "Archive is empty"
     }
 
-    Write-Log "Распаковка завершена. Файлов: $($Files.Count)"
+    Write-Log "Extracted files: $($Files.Count)"
 
-    # 4. Очищаем папку обновлений
-    Write-Log "Очистка C:\updates"
+    # 5. Prepare update directory
+    Write-Log "Cleaning update directory"
 
-    if (!(Test-Path $UpdateFolder)) {
-        New-Item -ItemType Directory -Path $UpdateFolder | Out-Null
-    }
+    New-Item -ItemType Directory -Path $UpdateFolder -Force | Out-Null
 
-    Get-ChildItem $UpdateFolder -Force |
+    Get-ChildItem -Path $UpdateFolder -Force |
         Remove-Item -Recurse -Force
 
-    # 5. Переносим обновления
-    Write-Log "Перенос файлов в C:\updates"
+    # 6. Move extracted files
+    Write-Log "Moving files to update directory"
 
-    Get-ChildItem $TempFolder -Force |
+    Get-ChildItem -Path $TempFolder -Force |
         Move-Item -Destination $UpdateFolder -Force
 
-    # 6. Удаляем временную папку
-    Remove-Item $TempFolder -Recurse -Force
+    # 7. Remove temporary files
+    Write-Log "Removing temporary files"
 
-    Write-Log "Обновление успешно завершено"
+    Remove-Item $TempFolder -Recurse -Force
+    Remove-Item $Archive -Force
+
+    Write-Log "Archive deleted successfully"
+    Write-Log "ESET Mirror update completed successfully"
+    Write-Log "========================================"
 }
 catch {
-    Write-Log "ОШИБКА: $_"
+    Write-Log "ERROR: $($_.Exception.Message)"
+    Write-Host $_.ScriptStackTrace
+    exit 1
 }
