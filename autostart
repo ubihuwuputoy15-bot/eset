@@ -1,0 +1,8 @@
+schtasks /Create `
+ /TN "ESET Weekly Update" `
+ /TR "powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Scripts\Update-ESET.ps1" `
+ /SC WEEKLY `
+ /D MON `
+ /ST 03:00 `
+ /RL HIGHEST `
+ /F
