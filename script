@@ -1,0 +1,97 @@
+# ==========================================
+# Автоматическое обновление ESET Mirror
+# Windows 10
+# ==========================================
+
+$ErrorActionPreference = "Stop"
+
+# Настройки
+$Url = "https://nv-kompmaster.ru/soft/Miror/Miror.zip"
+
+$DownloadFolder = "$env:USERPROFILE\Downloads"
+$Archive = Join-Path $DownloadFolder "Miror.zip"
+
+$UpdateFolder = "C:\updates"
+$TempFolder = "C:\ESET_Temp"
+
+# Лог
+$LogFolder = "C:\Scripts\Logs"
+$LogFile = Join-Path $LogFolder "ESET-update.log"
+
+New-Item -ItemType Directory -Path $LogFolder -Force | Out-Null
+
+function Write-Log($Message) {
+    $Time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    Add-Content -Path $LogFile -Value "[$Time] $Message"
+}
+
+try {
+    Write-Log "================================"
+    Write-Log "Начало обновления ESET"
+
+    # 1. Скачиваем архив
+    Write-Log "Скачивание архива..."
+
+    Invoke-WebRequest `
+        -Uri $Url `
+        -OutFile $Archive `
+        -UseBasicParsing
+
+    # 2. Проверяем наличие архива
+    if (!(Test-Path $Archive)) {
+        throw "Архив не найден после скачивания"
+    }
+
+    if ((Get-Item $Archive).Length -lt 1024) {
+        throw "Размер архива подозрительно маленький"
+    }
+
+    Write-Log "Архив скачан"
+
+    # 3. Проверяем ZIP и распаковываем во временную папку
+    if (Test-Path $TempFolder) {
+        Remove-Item $TempFolder -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Path $TempFolder | Out-Null
+
+    Write-Log "Распаковка архива..."
+
+    Expand-Archive `
+        -Path $Archive `
+        -DestinationPath $TempFolder `
+        -Force
+
+    # Проверяем, что распаковка не пустая
+    $Files = Get-ChildItem $TempFolder -Recurse -File
+
+    if ($Files.Count -eq 0) {
+        throw "Архив распаковался, но файлов внутри нет"
+    }
+
+    Write-Log "Распаковка завершена. Файлов: $($Files.Count)"
+
+    # 4. Очищаем папку обновлений
+    Write-Log "Очистка C:\updates"
+
+    if (!(Test-Path $UpdateFolder)) {
+        New-Item -ItemType Directory -Path $UpdateFolder | Out-Null
+    }
+
+    Get-ChildItem $UpdateFolder -Force |
+        Remove-Item -Recurse -Force
+
+    # 5. Переносим обновления
+    Write-Log "Перенос файлов в C:\updates"
+
+    Get-ChildItem $TempFolder -Force |
+        Move-Item -Destination $UpdateFolder -Force
+
+    # 6. Удаляем временную папку
+    Remove-Item $TempFolder -Recurse -Force
+
+    Write-Log "Обновление успешно завершено"
+}
+catch {
+    Write-Log "ОШИБКА: $_"
+}
